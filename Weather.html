@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时天气卡片</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/weather-icons/2.0.12/css/weather-icons.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #f0f0f0;
+            padding: 20px;
+        }
+
+        .weather-card {
+            position: relative;
+            width: 90%;
+            max-width: 400px;
+            padding: 2rem;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+            color: white;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+        }
+
+        .weather-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        .search-box {
+            width: 100%;
+            display: flex;
+            gap: 10px;
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+
+        input {
+            flex: 1;
+            padding: 0.8rem;
+            border: none;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+            outline: none;
+        }
+
+        input::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        button {
+            padding: 0.8rem 1.5rem;
+            border: none;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        button:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .weather-info {
+            text-align: center;
+        }
+
+        .weather-icon i {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.2));
+        }
+
+        .temperature {
+            font-size: 3rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .city {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .details {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 1rem;
+        }
+
+        .detail-item {
+            text-align: center;
+        }
+
+        .detail-item span:first-child {
+            display: block;
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        .error-message {
+            color: #ffeb3b;
+            margin: 10px 0;
+            font-size: 0.9em;
+            animation: fadeIn 0.3s;
+            white-space: pre-wrap;
+        }
+
+        .loading::after {
+            content: "⏳";
+            position: absolute;
+            right: 20px;
+            animation: spin 1s linear infinite;
+        }
+
+        .search-suggestions {
+            position: absolute;
+            width: calc(100% - 110px);
+            background: rgba(255,255,255,0.95);
+            border-radius: 8px;
+            margin-top: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .suggestion-item {
+            padding: 8px;
+            color: #333;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .suggestion-item:hover {
+            background: rgba(0,0,0,0.1);
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 480px) {
+            .weather-card {
+                padding: 1.5rem;
+            }
+            .temperature {
+                font-size: 2.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="weather-card" id="weatherCard">
+        <div class="search-box">
+            <input type="text" placeholder="输入城市名称..." id="cityInput">
+            <button onclick="searchWeather()">搜索</button>
+            <div class="search-suggestions"></div>
+        </div>
+        <div class="weather-info">
+            <div class="weather-icon"><i class="wi wi-day-sunny"></i></div>
+            <div class="city">--</div>
+            <div class="temperature">--°C</div>
+            <div class="details">
+                <div class="detail-item">
+                    <span>湿度</span>
+                    <span class="humidity">--%</span>
+                </div>
+                <div class="detail-item">
+                    <span>风速</span>
+                    <span class="wind">--m/s</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_KEY = '8a919ff2dea8e8ae438e04da24546a2b';
+        
+        const weatherCard = document.getElementById('weatherCard');
+        const cityInput = document.getElementById('cityInput');
+        const weatherIcon = document.querySelector('.weather-icon i');
+        const temperature = document.querySelector('.temperature');
+        const city = document.querySelector('.city');
+        const humidity = document.querySelector('.humidity');
+        const wind = document.querySelector('.wind');
+
+        const weatherIcons = {
+            Thunderstorm: 'wi-thunderstorm',
+            Drizzle: 'wi-sprinkle',
+            Rain: 'wi-rain',
+            Snow: 'wi-snow',
+            Mist: 'wi-fog',
+            Smoke: 'wi-smoke',
+            Haze: 'wi-day-haze',
+            Dust: 'wi-dust',
+            Fog: 'wi-fog',
+            Sand: 'wi-sandstorm',
+            Ash: 'wi-smoke',
+            Squall: 'wi-strong-wind',
+            Tornado: 'wi-tornado',
+            Clear: 'wi-day-sunny',
+            Clouds: 'wi-cloudy'
+        };
+
+        const gradients = {
+            Clear: ['#ff9966', '#ff5e62'],
+            Clouds: ['#8e9eab', '#eef2f3'],
+            Rain: ['#2193b0', '#6dd5ed'],
+            Thunderstorm: ['#373B44', '#4286f4'],
+            Snow: ['#BBD2C5', '#536976'],
+            default: ['#667eea', '#764ba2']
+        };
+
+        let timeoutId;
+
+        // 输入建议功能
+        cityInput.addEventListener('input', async (e) => {
+            clearTimeout(timeoutId);
+            const input = e.target.value.trim();
+            
+            if (!input) {
+                clearSuggestions();
+                return;
+            }
+            
+            timeoutId = setTimeout(async () => {
+                try {
+                    const response = await fetch(
+                        `https://api.openweathermap.org/data/2.5/find?q=${encodeURIComponent(input)}&type=like&sort=population&cnt=5&appid=${API_KEY}`
+                    );
+                    const data = await response.json();
+                    showSuggestions(data.list);
+                } catch (error) {
+                    clearSuggestions();
+                }
+            }, 300);
+        });
+
+        async function searchWeather() {
+            const cityName = cityInput.value.trim();
+            if (!cityName) return;
+
+            try {
+                weatherCard.classList.add('loading');
+                const encodedCity = encodeURIComponent(cityName);
+                
+                // 增强搜索兼容性
+                let apiUrl = `https://api.openweathermap.org/data/2.5/weather?q=${encodedCity}&units=metric&lang=zh_cn&appid=${API_KEY}`;
+                
+                // 第一次尝试请求
+                let response = await fetch(apiUrl);
+                
+                // 如果失败，尝试添加国家代码
+                if (!response.ok) {
+                    apiUrl += ',CN'; 
+                    response = await fetch(apiUrl);
+                }
+
+                if (!response.ok) throw new Error(await response.text());
+                
+                const data = await response.json();
+                updateDisplay(data);
+            } catch (error) {
+                handleError(error);
+            } finally {
+                weatherCard.classList.remove('loading');
+            }
+        }
+
+        function updateDisplay(data) {
+            city.textContent = data.name;
+            temperature.textContent = `${Math.round(data.main.temp)}°C`;
+            humidity.textContent = `${data.main.humidity}%`;
+            wind.textContent = `${data.wind.speed}m/s`;
+
+            const weatherMain = data.weather[0].main;
+            weatherIcon.className = `wi ${weatherIcons[weatherMain] || 'wi-day-sunny'}`;
+
+            const gradient = gradients[weatherMain] || gradients.default;
+            weatherCard.style.background = `linear-gradient(135deg, ${gradient[0]}, ${gradient[1]})`;
+        }
+
+        function handleError(error) {
+            let errorMessage = '获取天气数据失败';
+            
+            try {
+                const errorData = JSON.parse(error.message);
+                if (errorData.cod === '404') {
+                    errorMessage = `找不到 "${cityInput.value}"\n请尝试：\n• 使用拼音（如beijing）\n• 添加省份（如"湖北 武汉"）`;
+                } else if (errorData.cod === 401) {
+                    errorMessage = 'API配置错误，请联系管理员';
+                }
+            } catch (e) {
+                console.error('完整错误信息:', error);
+            }
+            
+            showError(errorMessage);
+        }
+
+        function showError(message) {
+            const existingError = document.querySelector('.error-message');
+            if (existingError) existingError.remove();
+
+            const errorEl = document.createElement('div');
+            errorEl.className = 'error-message';
+            errorEl.textContent = message;
+            document.querySelector('.search-box').after(errorEl);
+
+            setTimeout(() => errorEl.remove(), 3000);
+        }
+
+        function showSuggestions(cities) {
+            const container = document.querySelector('.search-suggestions');
+            container.innerHTML = cities?.map(city => `
+                <div class="suggestion-item" data-city="${city.name}">
+                    ${city.name}, ${city.sys.country}
+                </div>
+            `).join('') || '';
+            
+            container.querySelectorAll('.suggestion-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    cityInput.value = item.dataset.city;
+                    clearSuggestions();
+                    searchWeather();
+                });
+            });
+        }
+
+        function clearSuggestions() {
+            document.querySelector('.search-suggestions').innerHTML = '';
+        }
+
+        // 回车键搜索
+        cityInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchWeather();
+        });
+
+        // 自动定位功能
+        function initGeoLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    async (position) => {
+                        try {
+                            const response = await fetch(
+                                `https://api.openweathermap.org/data/2.5/weather?lat=${position.coords.latitude}&lon=${position.coords.longitude}&units=metric&appid=${API_KEY}`
+                            );
+                            const data = await response.json();
+                            updateDisplay(data);
+                        } catch (error) {
+                            showError('自动定位失败');
+                        }
+                    },
+                    (error) => {
+                        showError('位置访问被拒绝');
+                    }
+                );
+            }
+        }
+
+        // 初始化
+        initGeoLocation();
+    </script>
+</body>
+</html>
